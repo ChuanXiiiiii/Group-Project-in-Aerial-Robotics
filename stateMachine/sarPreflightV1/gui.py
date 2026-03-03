@@ -174,6 +174,13 @@ def api_start_search():
     return jsonify({"ok": True})
 
 
+@app.route("/api/stop_search", methods=["POST"])
+def api_stop_search():
+    """Send abort command to the SEARCH state."""
+    shared_status.send_command({"type": "stop_search"})
+    return jsonify({"ok": True})
+
+
 # ── Dashboard page ─────────────────────────────────────────────
 
 @app.route("/")
@@ -519,6 +526,97 @@ DASHBOARD_HTML = """
         accent-color: #4caf50;
         cursor: pointer;
     }
+
+    /* ── Search Progress Panel (Step 5) ── */
+    #search-panel {
+        display: none;
+        background: #1a237e;
+        border: 2px solid #3949ab;
+        border-radius: 8px;
+        padding: 16px 20px;
+        color: #fff;
+        font-family: 'Courier New', monospace;
+    }
+    #search-panel.visible { display: block; }
+
+    #search-panel h3 {
+        margin: 0 0 12px 0;
+        color: #7986cb;
+        font-size: 14px;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+    }
+
+    .search-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr 1fr;
+        gap: 10px 20px;
+        margin-bottom: 12px;
+    }
+    .search-item {
+        display: flex;
+        flex-direction: column;
+    }
+    .search-label {
+        font-size: 10px;
+        color: #9fa8da;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+    .search-value {
+        font-size: 18px;
+        font-weight: bold;
+        color: #e8eaf6;
+    }
+
+    .search-progress-bar {
+        background: #283593;
+        border-radius: 4px;
+        height: 8px;
+        margin: 8px 0;
+        overflow: hidden;
+    }
+    .search-progress-fill {
+        height: 100%;
+        background: #4caf50;
+        border-radius: 4px;
+        transition: width 0.5s ease;
+        width: 0%;
+    }
+    .search-progress-fill.paused  { background: #ff9800; }
+    .search-progress-fill.complete { background: #2196f3; }
+
+    .search-status-badge {
+        display: inline-block;
+        padding: 3px 10px;
+        border-radius: 4px;
+        font-size: 12px;
+        font-weight: bold;
+        text-transform: uppercase;
+    }
+    .search-status-badge.flying    { background: #1b5e20; color: #a5d6a7; }
+    .search-status-badge.paused    { background: #e65100; color: #ffcc80; animation: pulse 1.5s infinite; }
+    .search-status-badge.complete  { background: #0d47a1; color: #90caf9; }
+    .search-status-badge.error     { background: #b71c1c; color: #ef9a9a; }
+    .search-status-badge.init      { background: #4a148c; color: #ce93d8; }
+
+    .search-controls {
+        display: flex;
+        gap: 10px;
+        margin-top: 12px;
+    }
+    .search-btn {
+        padding: 6px 16px;
+        border: none;
+        border-radius: 4px;
+        font-size: 12px;
+        font-weight: bold;
+        cursor: pointer;
+        text-transform: uppercase;
+    }
+    .search-btn.stop   { background: #c62828; color: #fff; }
+    .search-btn.stop:hover  { background: #d32f2f; }
+    .search-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 </style>
 </head>
 <body>
@@ -687,6 +785,56 @@ DASHBOARD_HTML = """
     </div>
 </div>
 
+<!-- ── Search Progress Panel (Step 5) ── -->
+<div class="section">
+    <div class="section-label">Search Progress</div>
+    <div id="search-panel">
+        <h3>Search Mission</h3>
+
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+            <span id="search-status-badge" class="search-status-badge init">INITIALISING</span>
+            <span id="search-elapsed" style="color:#9fa8da; font-size:13px;">0:00</span>
+        </div>
+
+        <div class="search-grid">
+            <div class="search-item">
+                <span class="search-label">Waypoint</span>
+                <span class="search-value" id="search-wp">0 / 0</span>
+            </div>
+            <div class="search-item">
+                <span class="search-label">Progress</span>
+                <span class="search-value" id="search-pct">0%</span>
+            </div>
+            <div class="search-item">
+                <span class="search-label">Altitude</span>
+                <span class="search-value" id="search-alt">0.0 m</span>
+            </div>
+            <div class="search-item">
+                <span class="search-label">Latitude</span>
+                <span class="search-value" id="search-lat">--</span>
+            </div>
+            <div class="search-item">
+                <span class="search-label">Longitude</span>
+                <span class="search-value" id="search-lon">--</span>
+            </div>
+            <div class="search-item">
+                <span class="search-label">Battery</span>
+                <span class="search-value" id="search-batt">--%</span>
+            </div>
+        </div>
+
+        <div class="search-progress-bar">
+            <div class="search-progress-fill" id="search-bar"></div>
+        </div>
+
+        <div class="search-controls">
+            <button class="search-btn stop" id="btn-stop-search" onclick="stopSearch()" disabled>
+                Abort Search
+            </button>
+        </div>
+    </div>
+</div>
+
 <div class="message-box">
     <span class="label">LOG:</span>
     <span id="lastMessage">Waiting for connection...</span>
@@ -800,6 +948,9 @@ DASHBOARD_HTML = """
 
         // ── Update preflight checklist ──
         updatePreflightPanel(s);
+
+        // ── Update search progress panel ──
+        updateSearchPanel(s);
     }
 
     function buildStateButtons(states) {
@@ -1157,6 +1308,79 @@ DASHBOARD_HTML = """
             btn.style.borderColor = '#42a5f5';
             btn.style.color = '#90caf9';
         }
+    }
+
+    // ── Search Progress Panel (Step 5) ──
+
+    function updateSearchPanel(s) {
+        const panel = document.getElementById('search-panel');
+        const currentState = s.current_state || '';
+        const searchData = s.search_progress || null;
+
+        // Show panel when SEARCH is active or search data exists
+        const showPanel = (currentState === 'SEARCH') ||
+                          (currentState === 'CHANGE_MODE' && searchData) ||
+                          (searchData !== null);
+
+        if (showPanel) {
+            panel.classList.add('visible');
+        } else {
+            panel.classList.remove('visible');
+            return;
+        }
+
+        // Abort button state
+        const btnStop = document.getElementById('btn-stop-search');
+        btnStop.disabled = (currentState !== 'SEARCH');
+
+        // If no search data yet, show defaults
+        if (!searchData) return;
+
+        // Update values
+        document.getElementById('search-wp').textContent =
+            searchData.current_wp + ' / ' + searchData.total_wps;
+        document.getElementById('search-pct').textContent =
+            searchData.progress_pct + '%';
+        document.getElementById('search-alt').textContent =
+            searchData.alt + ' m';
+        document.getElementById('search-lat').textContent =
+            searchData.lat.toFixed(6);
+        document.getElementById('search-lon').textContent =
+            searchData.lon.toFixed(6);
+        document.getElementById('search-batt').textContent =
+            (searchData.battery_pct >= 0 ? searchData.battery_pct + '%' : '--');
+        document.getElementById('search-elapsed').textContent =
+            searchData.elapsed || '0:00';
+
+        // Progress bar
+        const bar = document.getElementById('search-bar');
+        bar.style.width = searchData.progress_pct + '%';
+
+        // Status badge
+        const badge = document.getElementById('search-status-badge');
+        const status = searchData.status || 'UNKNOWN';
+        badge.textContent = status;
+        badge.className = 'search-status-badge';
+
+        if (status === 'FLYING')             badge.classList.add('flying');
+        else if (status.indexOf('PAUSE') >= 0) badge.classList.add('paused');
+        else if (status === 'COMPLETE')      badge.classList.add('complete');
+        else if (status.indexOf('ERROR') >= 0 || status.indexOf('ABORT') >= 0 || status.indexOf('TIMEOUT') >= 0)
+                                              badge.classList.add('error');
+        else                                  badge.classList.add('init');
+
+        // Progress bar colour
+        bar.className = 'search-progress-fill';
+        if (status.indexOf('PAUSE') >= 0)    bar.classList.add('paused');
+        else if (status === 'COMPLETE')      bar.classList.add('complete');
+    }
+
+    function stopSearch() {
+        if (!confirm('Abort the search mission?')) return;
+        fetch('/api/stop_search', { method: 'POST' })
+            .then(r => r.json())
+            .then(d => console.log('Stop search:', d))
+            .catch(e => console.error('Stop search error:', e));
     }
 
     // Start with one empty row

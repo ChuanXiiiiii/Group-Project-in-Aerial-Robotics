@@ -12,7 +12,7 @@ MAVPROXY_MASTER = "/dev/ttyAMA0"
 MAVPROXY_MASTER_BAUD = 921600
 
 MAVPROXY_OUTPUTS = [
-    "udp:192.168.1.43:14550",     # ← Change to your Windows VM IP
+    "udp:192.168.1.22:14550",     # ← Change to your Windows VM IP
     "udp:127.0.0.1:14551",         # ← State machine connects here
 ]
 

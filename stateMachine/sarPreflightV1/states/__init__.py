@@ -16,6 +16,7 @@ from states.timed_hold import TimedHoldState
 from states.upload_mission import UploadMissionState
 from states.upload_fence import UploadFenceState
 from states.generate_pattern import GeneratePatternState
+from states.search import SearchState
 
 # ┌──────────────────────────────────────────────────────┐
 # │  STATE REGISTRY                                      │
@@ -30,6 +31,7 @@ STATE_CLASSES = {
     "UPLOAD_MISSION":   UploadMissionState,
     "UPLOAD_FENCE":     UploadFenceState,
     "GENERATE_PATTERN": GeneratePatternState,
+    "SEARCH":           SearchState,
 }
 
 INITIAL_STATE = "WAIT"
