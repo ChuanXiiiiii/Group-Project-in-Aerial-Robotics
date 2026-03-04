@@ -333,7 +333,17 @@ def _generate_contracting_polygon_m(poly_m, spacing_m):
         next_poly = _offset_polygon_inward(current_poly, spacing_m)
         if next_poly is None:
             break
-        current_poly = next_poly
+
+        # Rotate next ring so its first vertex is the one closest to the
+        # last waypoint just flown — the last point of ring N becomes the
+        # entry point into ring N+1, keeping the path continuous.
+        last_x, last_y = waypoints_m[-1]
+        closest_idx = min(
+            range(len(next_poly)),
+            key=lambda i: math.hypot(next_poly[i][0] - last_x,
+                                     next_poly[i][1] - last_y),
+        )
+        current_poly = next_poly[closest_idx:] + next_poly[:closest_idx]
 
     if not waypoints_m:
         raise ValueError(
