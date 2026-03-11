@@ -197,7 +197,7 @@ class SearchState(BaseState):
                 self._cleanup_search_keys()
                 self.shared["requested_mode"] = "GUIDED"
                 self.shared["return_to"]      = "IDLE"
-                import mission_log; mission_log.event("SEARCH", "Mission cancelled by operator")
+                mission_log.event("SEARCH", "Mission cancelled by operator")
                 return "CHANGE_MODE"
 
             # ── PLB button ──
@@ -209,7 +209,7 @@ class SearchState(BaseState):
                 self._cleanup_search_keys()
                 self.shared["requested_mode"] = "GUIDED"
                 self.shared["return_to"]      = "IDLE"
-                import mission_log; mission_log.event("SEARCH", "PLB activated — returning to IDLE in GUIDED")
+                mission_log.event("SEARCH", "PLB activated — returning to IDLE in GUIDED")
                 return "CHANGE_MODE"
 
             # ── Mission complete ──
