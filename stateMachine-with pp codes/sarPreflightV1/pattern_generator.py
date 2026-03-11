@@ -12,7 +12,7 @@ Public API
     ----------
     0 : Lawnmower      — classic boustrophedon parallel scan lines
     1 : Inward Spiral  — Archimedean spiral shrinking toward centroid
-    2 : Expanding Square — outward squares from centroid (SAR standard)
+    2 : Contracting Polygon Orbit — polygon-shaped rings shrinking inward ring by ring
 
     generate_lawnmower(polygon, spacing_m, alt_m, heading_deg=0)
         → kept for backward compatibility, identical to mode=0
@@ -240,47 +240,115 @@ def _generate_spiral_m(poly_m, spacing_m):
 
 
 # ══════════════════════════════════════════════════════════════
-#  Algorithm 2 — Expanding Square
+#  Algorithm 2 — Contracting Polygon Orbit
 # ══════════════════════════════════════════════════════════════
 
-def _generate_expanding_square_m(poly_m, spacing_m):
+def _offset_polygon_inward(poly_m, offset_m):
     """
-    Expanding square (outward from centroid).
+    Shrink a convex polygon inward by offset_m metres.
 
-    Classic SAR pattern: start at the centre, fly ever-larger squares.
-    Each leg is sampled at fine resolution; points outside the polygon
-    are still recorded so the preview clearly shows where the pattern
-    exits the boundary.
+    For each edge, moves it inward (toward the centroid) by offset_m,
+    then recomputes corners as intersections of adjacent offset edges.
+
+    Returns the new vertex list in the same order as the input,
+    or None if the polygon has collapsed (parallel edges or zero area).
+    """
+    n = len(poly_m)
+    cx = sum(p[0] for p in poly_m) / n
+    cy = sum(p[1] for p in poly_m) / n
+
+    # Build one offset line per edge: (base_x, base_y, dir_x, dir_y)
+    offset_lines = []
+    for i in range(n):
+        x1, y1 = poly_m[i]
+        x2, y2 = poly_m[(i + 1) % n]
+        dx, dy = x2 - x1, y2 - y1
+        length = math.hypot(dx, dy)
+        if length < 1e-10:
+            continue
+        # Right-perpendicular unit normal: (dy/L, -dx/L)
+        nx, ny = dy / length, -dx / length
+        # Flip if the normal points away from the centroid
+        mid_x, mid_y = (x1 + x2) / 2, (y1 + y2) / 2
+        if (cx - mid_x) * nx + (cy - mid_y) * ny < 0:
+            nx, ny = -nx, -ny
+        offset_lines.append((x1 + nx * offset_m, y1 + ny * offset_m, dx, dy))
+
+    if len(offset_lines) < 3:
+        return None
+
+    # New corners = intersections of adjacent offset lines
+    new_poly = []
+    m = len(offset_lines)
+    for i in range(m):
+        j = (i + 1) % m
+        ox1, oy1, dx1, dy1 = offset_lines[i]
+        ox2, oy2, dx2, dy2 = offset_lines[j]
+        denom = dx1 * dy2 - dy1 * dx2
+        if abs(denom) < 1e-10:
+            return None  # parallel edges — polygon has collapsed
+        t = ((ox2 - ox1) * dy2 - (oy2 - oy1) * dx2) / denom
+        new_poly.append((ox1 + t * dx1, oy1 + t * dy1))
+
+    # Confirm the shrunken polygon is still viable
+    ncx = sum(p[0] for p in new_poly) / len(new_poly)
+    ncy = sum(p[1] for p in new_poly) / len(new_poly)
+    if _polygon_apothem(new_poly, ncx, ncy) <= 0:
+        return None
+
+    return new_poly
+
+
+def _generate_contracting_polygon_m(poly_m, spacing_m):
+    """
+    Contracting Polygon Orbit.
+
+    Orbits the search-area boundary ring by ring, shrinking inward by
+    spacing_m each orbit.  The polygon shape (not a square) is used
+    directly: each ring contributes exactly N waypoints — one per
+    vertex — which are the only turning points for the drone.
+    For a quadrilateral search area that is exactly 4 waypoints per ring.
+
+    Ring 0  : the original polygon corners  (outermost orbit)
+    Ring 1  : polygon shrunk inward by spacing_m
+    Ring 2  : shrunk by 2 × spacing_m
+    …
+    The pattern terminates when the offset polygon collapses.
 
     Returns list of (x, y) in metres.
     """
-    cx = sum(p[0] for p in poly_m) / len(poly_m)
-    cy = sum(p[1] for p in poly_m) / len(poly_m)
-    max_r = _polygon_apothem(poly_m, cx, cy)
+    waypoints_m = []
+    current_poly = list(poly_m)
 
-    waypoints_m = [(cx, cy)]            # start at centroid
+    while True:
+        cx = sum(p[0] for p in current_poly) / len(current_poly)
+        cy = sum(p[1] for p in current_poly) / len(current_poly)
+        if _polygon_apothem(current_poly, cx, cy) <= 0:
+            break
 
-    # Directions: East, North, West, South
-    directions = [(1, 0), (0, 1), (-1, 0), (0, -1)]
-    dir_idx = 0
-    leg = spacing_m                     # half-side length of first square
+        # One waypoint per corner — drone turns here, no intermediate points
+        waypoints_m.extend(current_poly)
 
-    while leg <= max_r + spacing_m:
-        # Two legs per direction before the square expands
-        for _ in range(2):
-            dx, dy = directions[dir_idx % 4]
-            dir_idx += 1
-            x0, y0 = waypoints_m[-1]
-            steps = max(1, int(leg / (spacing_m / 4)))
-            for s in range(1, steps + 1):
-                t = s / steps
-                waypoints_m.append((x0 + dx * leg * t,
-                                     y0 + dy * leg * t))
-        leg += spacing_m
+        # Shrink inward for the next ring
+        next_poly = _offset_polygon_inward(current_poly, spacing_m)
+        if next_poly is None:
+            break
 
-    if len(waypoints_m) < 2:
-        raise ValueError("Expanding square generated no waypoints — "
-                         "polygon may be too small for the given spacing.")
+        # Rotate next ring so its first vertex is the one closest to the
+        # last waypoint just flown — the last point of ring N becomes the
+        # entry point into ring N+1, keeping the path continuous.
+        last_x, last_y = waypoints_m[-1]
+        closest_idx = min(
+            range(len(next_poly)),
+            key=lambda i: math.hypot(next_poly[i][0] - last_x,
+                                     next_poly[i][1] - last_y),
+        )
+        current_poly = next_poly[closest_idx:] + next_poly[:closest_idx]
+
+    if not waypoints_m:
+        raise ValueError(
+            "Contracting polygon orbit generated no waypoints — "
+            "polygon may be too small for the given spacing.")
     return waypoints_m
 
 
@@ -292,7 +360,7 @@ def _generate_expanding_square_m(poly_m, spacing_m):
 PATTERN_NAMES = {
     0: "Lawnmower (boustrophedon)",
     1: "Inward Spiral",
-    2: "Expanding Square",
+    2: "Contracting Polygon Orbit",
 }
 
 
@@ -315,7 +383,7 @@ def generate_pattern(polygon, spacing_m, alt_m, heading_deg=0, mode=0):
     mode : int
         0 → Lawnmower (boustrophedon)
         1 → Inward Spiral
-        2 → Expanding Square
+        2 → Contracting Polygon Orbit
 
     Returns
     -------
@@ -335,7 +403,7 @@ def generate_pattern(polygon, spacing_m, alt_m, heading_deg=0, mode=0):
     elif mode == 1:
         wps_m = _generate_spiral_m(poly_m, spacing_m)
     elif mode == 2:
-        wps_m = _generate_expanding_square_m(poly_m, spacing_m)
+        wps_m = _generate_contracting_polygon_m(poly_m, spacing_m)
 
     return [_metres_to_latlon(x, y, c_lat, c_lon, m_per_lon, alt_m)
             for x, y in wps_m]
