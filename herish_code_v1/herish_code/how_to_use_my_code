@@ -1,0 +1,30 @@
+
+Steps to use the waypoint generator
+
+1. Copy the file "waypoint_generator.py" into your project folder.
+
+2. In your main script, import the waypoint generator function.
+
+3. Prepare the survey polygon as a list of coordinates in the format (longitude, latitude).
+
+4. Call the function generate_waypoints() and pass the polygon coordinates.
+
+5. The function will return a list of waypoint dictionaries containing lat, lon, and alt.
+
+6. Use the returned waypoint list in your mission script or drone control logic.
+
+EXAMPLE:
+#---------------------------------------------
+from waypoint_generator import generate_waypoints
+
+polygon_coords = [
+    (-2.6021, 51.4545),
+    (-2.6018, 51.4545),
+    (-2.6018, 51.4548),
+    (-2.6021, 51.4548)
+]
+
+waypoints = generate_waypoints(polygon_coords)
+
+print(waypoints)
+#--------------------------------------------------
