@@ -4,7 +4,7 @@ states/generate_pattern.py — GENERATE_PATTERN state.
 Subroutine state: called from WAIT, returns to WAIT.
 
 1. Reads search polygon from KML via kml_parser
-2. Calls pattern_generator.generate_lawnmower()
+2. Calls pattern_generator.generate_pattern()
 3. Calls preview.render_preview() to produce a PNG
 4. Stores waypoints + preview info in shared dict
 5. Returns to WAIT with pending_pattern flag set
@@ -17,7 +17,8 @@ import logging
 
 import config
 from kml_parser import parse_kml
-from pattern_generator import generate_pattern, PATTERN_NAMES
+from path_planner.common import corner_map_p0_p4_latlon
+from pattern_generator import PATTERN_NAMES, generate_pattern
 from preview import render_preview
 from states.base import BaseState
 
@@ -58,22 +59,29 @@ class GeneratePatternState(BaseState):
                 raise ValueError(
                     "No 'Survey Area' or 'Search Area' found in KML")
 
-            # ── 2. Generate search pattern ───────────────────
-            # Switch algorithm by changing config.PATTERN_MODE:
-            #   0 = Lawnmower (boustrophedon)
-            #   1 = Inward Spiral
-            #   2 = Expanding Square
+            # Introduce explicit P0..P4 naming for 5-vertex search areas.
+            corner_map = corner_map_p0_p4_latlon(polygon)
+            if corner_map:
+                self.log(
+                    "Corner map (P0..P4): "
+                    + ", ".join(
+                        f"{name}=({lat:.8f},{lon:.8f})"
+                        for name, (lat, lon) in corner_map.items()
+                    )
+                )
+
+            # ── 2. Generate selected pattern algorithm ───────
             waypoints = generate_pattern(
                 polygon=polygon,
                 spacing_m=config.SWATH_WIDTH_M,
                 alt_m=config.SEARCH_ALT_M,
                 heading_deg=config.SCAN_HEADING_DEG,
-                mode=config.PATTERN_MODE,
+                algorithm_id=config.PATTERN_ALGORITHM,
             )
-            pattern_name = PATTERN_NAMES[config.PATTERN_MODE]
+            pattern_name = PATTERN_NAMES.get(config.PATTERN_ALGORITHM, "unknown")
             self.log(f"Generated {len(waypoints)} waypoints "
-                     f"[mode={config.PATTERN_MODE}: {pattern_name}] "
-                     f"(spacing={config.SWATH_WIDTH_M}m, "
+                     f"(algorithm={config.PATTERN_ALGORITHM}:{pattern_name}, "
+                     f"spacing={config.SWATH_WIDTH_M}m, "
                      f"alt={config.SEARCH_ALT_M}m)")
 
             # ── 3. Render preview image ──────────────────────
@@ -94,6 +102,7 @@ class GeneratePatternState(BaseState):
             self.shared["pending_pattern"] = {
                 "waypoints": waypoints,
                 "polygon": [(p[0], p[1]) for p in polygon],
+                "corners": corner_map,
                 "preview_path": info["path"],
                 "wp_count": info["wp_count"],
                 "oob_count": info["oob_count"],

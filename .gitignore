@@ -1,0 +1,9 @@
+# Ignore everything by default
+*
+
+# Keep this file tracked
+!.gitignore
+
+# Keep only path_planner and all its contents
+!path_planner/
+!path_planner/**

@@ -106,14 +106,14 @@ print(f"=== Perimeter Spiral: {len(wps_perimeter) - 1} waypoints, "
 print(describe_waypoints(wps_perimeter))
 print()
 
-with open(os.path.join(HERE, "waypoints_full.txt"), "w") as f:
+with open(os.path.join(HERE, "waypoints_spiral.txt"), "w") as f:
     f.write("index  name        lat               lon              x_m        y_m\n")
     f.write("-" * 80 + "\n")
     for wp in wps_perimeter:
         f.write(f"{wp['index']:>5}  {wp['name']:<10}  "
                 f"{wp['lat']:>16.8f}  {wp['lon']:>16.8f}  "
                 f"{wp['x_m']:>9.2f}  {wp['y_m']:>9.2f}\n")
-print("  Saved: waypoints_full.txt")
+print("  Saved: waypoints_spiral.txt")
 print()
 
 # ───────────────────────────────────────────────────────────────
@@ -158,6 +158,26 @@ print("=" * 58)
 print()
 
 # ───────────────────────────────────────────────────────────────
+#  4b. Save comparison table to file
+# ───────────────────────────────────────────────────────────────
+comparison_lines = [
+    "=" * 58,
+    "  ALGORITHM COMPARISON",
+    "=" * 58,
+    f"  {'Metric':<28} {'Perimeter Spiral':>12}  {'Lawnmower':>12}",
+    f"  {'-'*28}  {'-'*12}  {'-'*12}",
+    f"  {'Waypoints (excl. enter)':<28} {len(wps_perimeter)-1:>12}  {len(wps_lawnmower)-1:>12}",
+    f"  {'Total distance (m)':<28} {dist_perimeter:>12.1f}  {dist_lawnmower:>12.1f}",
+    f"  {'HALF_SWATH (m)':<28} {PP_HALF_SWATH:>12.1f}  {LM_HALF_SWATH:>12.1f}",
+    f"  {'SWATH / line spacing (m)':<28} {PP_SWATH:>12.1f}  {LM_SWATH:>12.1f}",
+    "=" * 58,
+]
+with open(os.path.join(HERE, "comparison.txt"), "w") as f:
+    f.write("\n".join(comparison_lines) + "\n")
+print("  Saved: comparison.txt")
+print()
+
+# ───────────────────────────────────────────────────────────────
 #  5. Visualise — side-by-side comparison
 # ───────────────────────────────────────────────────────────────
 try:
@@ -193,7 +213,13 @@ def _plot_perimeter(ax, wps: list) -> None:
     if wps:
         xs = [wp["x_m"] for wp in wps]
         ys = [wp["y_m"] for wp in wps]
-        ax.plot(xs, ys, "b-", linewidth=0.9, alpha=0.75, label="UAV path")
+        # Draw the first leg (enter -> first mission point) as dashed.
+        if len(xs) >= 2:
+            ax.plot(xs[:2], ys[:2], "b--", linewidth=1.1, alpha=0.9,
+                    label="Enter -> first WP")
+        if len(xs) >= 3:
+            ax.plot(xs[1:], ys[1:], "b-", linewidth=0.9, alpha=0.75,
+                    label="UAV path")
         for wp in wps:
             colour = "red"        if wp["name"] == "centre" else \
                      "darkorange" if wp["name"] == "enter"  else "dodgerblue"
@@ -238,9 +264,15 @@ def _plot_lawnmower(ax, wps: list) -> None:
     if wps:
         xs = [wp["x_m"] for wp in wps]
         ys = [wp["y_m"] for wp in wps]
-        ax.plot(xs, ys, "g-", linewidth=0.9, alpha=0.75, label="UAV path")
+        # Draw the first leg (enter -> WP0) as dashed, remaining legs solid.
+        if len(xs) >= 2:
+            ax.plot(xs[:2], ys[:2], linestyle="--", color="orange", linewidth=1.1, alpha=0.9,
+                    label="Enter -> WP0")
+        if len(xs) >= 3:
+            ax.plot(xs[1:], ys[1:], linestyle="-", color="orange", linewidth=0.9, alpha=0.75,
+                    label="UAV path")
         for wp in wps:
-            colour = "darkorange" if wp["name"] == "enter"   else "limegreen"
+            colour = "orange"
             ms     = 7            if wp["name"] == "enter"   else 4
             ax.plot(wp["x_m"], wp["y_m"], "o", color=colour, markersize=ms)
             ax.annotate(wp["name"], (wp["x_m"], wp["y_m"]),

@@ -12,7 +12,7 @@ MAVPROXY_MASTER = "/dev/ttyAMA0"
 MAVPROXY_MASTER_BAUD = 921600
 
 MAVPROXY_OUTPUTS = [
-    "udp:192.168.1.43:14550",     # ← Change to your Windows VM IP
+    "udp:192.168.1.22:14550",     # ← Change to your Windows VM IP
     "udp:127.0.0.1:14551",         # ← State machine connects here
 ]
 
@@ -106,12 +106,7 @@ MODE_NAMES = {v: k for k, v in FLIGHT_MODES.items()}
 SWATH_WIDTH_M = 10       # Spacing between parallel scan lines (metres)
 SEARCH_ALT_M  = 30       # AGL altitude for search waypoints (metres)
 SCAN_HEADING_DEG = 0     # 0 = scan lines run East–West, 90 = North–South
-
-# Search pattern algorithm:
-#   0 = Lawnmower (boustrophedon) — classic parallel scan lines, best coverage
-#   1 = Inward Spiral            — shrinks toward centroid, good for circular areas
-#   2 = Expanding Square         — grows outward from centre, standard SAR pattern
-PATTERN_MODE = 0
+PATTERN_ALGORITHM = 0    # 0 = lawnmower, 1 = perimeter_spiral
 
 # ═══════════════════════════════════════════════════════════════
 #  Map tile for pattern preview

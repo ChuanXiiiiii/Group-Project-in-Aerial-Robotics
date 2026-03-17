@@ -58,7 +58,7 @@ from search_area import (
 )
 
 # ── Swath / threshold parameters ──────────────────────────────
-HALF_SWATH = 5.0
+HALF_SWATH = 5.5
 SWATH      = HALF_SWATH * 2      # full swath width in metres
 
 # Take-Off Location  (from KML <Placemark name="Take-Off Location">)
@@ -114,6 +114,31 @@ def _segments_cross(a1: tuple[float, float], a2: tuple[float, float],
        ((d3 > tol and d4 < -tol) or (d3 < -tol and d4 > tol)):
         return True
     return False
+
+
+def _pt_seg_dist(p: tuple[float, float],
+                 a: tuple[float, float],
+                 b: tuple[float, float]) -> float:
+    """Minimum distance from point p to segment a→b."""
+    ax, ay = a; bx, by = b; px, py = p
+    dx, dy = bx - ax, by - ay
+    t = ((px - ax) * dx + (py - ay) * dy) / (dx * dx + dy * dy + 1e-30)
+    t = max(0.0, min(1.0, t))
+    cx, cy = ax + t * dx, ay + t * dy
+    return math.hypot(px - cx, py - cy)
+
+
+def _seg_seg_dist(a1: tuple[float, float], a2: tuple[float, float],
+                  b1: tuple[float, float], b2: tuple[float, float]) -> float:
+    """Minimum distance between segment a1→a2 and segment b1→b2."""
+    if _segments_cross(a1, a2, b1, b2):
+        return 0.0
+    return min(
+        _pt_seg_dist(a1, b1, b2),
+        _pt_seg_dist(a2, b1, b2),
+        _pt_seg_dist(b1, a1, a2),
+        _pt_seg_dist(b2, a1, a2),
+    )
 
 
 def _offset_line(poly: list[tuple[float, float]], edge_idx: int,
@@ -356,6 +381,9 @@ def plan() -> list[dict]:
     # intersection and is treated as a degeneration signal.
     _max_poly_r = max(math.hypot(x, y) for x, y in _POLY_XY)
 
+    # True when P3P4-inset ↔ P1P2-inset gap < SWATH: finish current lap then stop.
+    distance_stop = False
+
     k = 0
     while True:
         offset = HALF_SWATH + k * SWATH
@@ -388,15 +416,19 @@ def plan() -> list[dict]:
         if w0 is None:
             break
 
-        # ── W{M-1}_k: standard corner near P4 (P3P4-inset ∩ P4P0-inset) ──
-        # W4_k = P3P4-inset(off_k) ∩ P4P0-inset(off_k).
-        # Pentagon phase: work[m-1] is exactly this corner.
-        # Post-degeneration: the quad has no P4 vertex, so compute from penta_poly.
+        # ── W{M-1}_k: corner near P3/P4 side ─────────────────────────────
+        # Pentagon phase: W4_k = P3P4-inset(off_k) ∩ P4P0-inset(off_k),
+        # and work[m-1] is exactly this corner.
+        # Post-degeneration quad phase: use
+        # W4_k = P3P4-inset(off_k) ∩ P0P1-inset(off_k).
         if N_orig < N_penta:
             e_P3P4_w4 = _offset_line(penta_poly, N_penta - 2, offset)
-            e_P4P0_w4 = _offset_line(penta_poly, N_penta - 1, offset)
+            if N_orig == N_penta - 1:
+                e_w4_other = _offset_line(penta_poly, 0, offset)          # P0P1
+            else:
+                e_w4_other = _offset_line(penta_poly, N_penta - 1, offset) # fallback: P4P0
             pt_w4 = _line_intersection(e_P3P4_w4[0], e_P3P4_w4[1],
-                                       e_P4P0_w4[0], e_P4P0_w4[1])
+                                       e_w4_other[0], e_w4_other[1])
             last_x, last_y = pt_w4 if pt_w4 is not None else work[m - 1]
         else:
             last_x, last_y = work[m - 1]
@@ -413,12 +445,20 @@ def plan() -> list[dict]:
             # W numbering is fixed to the original pentagon vertex indices:
             #   W1 … W{N_penta-3}: from quad inset work[1] … work[N_penta-3-1]
             #   W{N_penta-2} = W3: P2P3-inset(prev) ∩ P3P4-inset(cur) from pentagon
-            #   W{N_penta-1} = W4: P3P4-inset(cur) ∩ P4P0-inset(cur) standard corner
+            #   W{N_penta-1} = W4: P3P4-inset(cur) ∩ P0P1-inset(cur)
+            # For the first degeneration lap (e.g. k=3 in SWATH=10 cases),
+            # N_orig is still 5 at loop entry, so recompute W4 here to ensure
+            # degeneration uses quad-style W4 immediately.
             prev_off_dg = (HALF_SWATH + (k - 1) * SWATH) if k > 0 else offset
             e_P2P3  = _offset_line(penta_poly, N_penta - 3, prev_off_dg)
             e_P3P4c = _offset_line(penta_poly, N_penta - 2, offset)
             w3_pt = _line_intersection(e_P2P3[0], e_P2P3[1],
                                         e_P3P4c[0], e_P3P4c[1])
+            e_P0P1c = _offset_line(penta_poly, 0, offset)
+            w4_dg = _line_intersection(e_P3P4c[0], e_P3P4c[1],
+                                       e_P0P1c[0], e_P0P1c[1])
+            if w4_dg is not None:
+                last_x, last_y = w4_dg
             # W1 … W{N_penta-3} from quad inset (indices 1 … N_penta-3 in work)
             for j in range(1, N_penta - 2):
                 lap.append((f"W{j}_{k}", work[j][0], work[j][1]))
@@ -428,6 +468,21 @@ def plan() -> list[dict]:
             lap.append((f"W{N_penta - 2}_{k}", w3x, w3y))
             # W4 (= W{N_penta-1}) standard corner
             lap.append((f"W{N_penta - 1}_{k}", last_x, last_y))
+
+            # Single-vertex degeneration (m == 1 from _inset_polygon_raw) means
+            # the polygon has fully collapsed; no real survey segment.  When
+            # distance_stop is already True, skip this stub so the previous full
+            # lap remains the last lap and the W4 halt fires correctly.
+            if len(lap) == 1 and distance_stop:
+                break
+
+            # On the proximity-stop lap (distance_stop already True) the
+            # transition segment naturally crosses earlier laps because the
+            # spiral has contracted inward.  Skip the crossing check and
+            # commit the lap directly so the W4-halt can fire in the emit stage.
+            if distance_stop:
+                lap_wps.append(lap)
+                break
 
             # ── Crossing check — segment-by-segment commit ─────────────────
             # Each new segment is checked against a PRE-LAP snapshot of
@@ -460,10 +515,30 @@ def plan() -> list[dict]:
                 break
 
             lap_wps.append(lap)
-            # Degenerate polygon for all subsequent laps
-            orig_poly  = orig_poly[:-1]
-            N_orig     = len(orig_poly)
-            k_in_phase = 0
+            if distance_stop:
+                break
+            # ── Proximity check for NEXT lap before degeneration ──────────
+            _next_off = HALF_SWATH + (k + 1) * SWATH
+            _pi_next, _ = _inset_polygon_raw(penta_poly, _next_off)
+            if _pi_next and len(_pi_next) == 5:
+                _d_next = _seg_seg_dist(_pi_next[1], _pi_next[2],
+                                        _pi_next[3], _pi_next[4])
+                if _d_next < SWATH:
+                    distance_stop = True
+                    # Do NOT degenerate further — plan k+1 with the current
+                    # polygon so it can still be geometrically solved.
+                    k += 1
+                    continue
+            # Degenerate polygon for all subsequent laps.
+            # Never reduce below quad (4 vertices): triangle insets produce
+            # numerically exploding corners that fail the sanity check even
+            # when valid survey area remains.  Keep the quad as the minimum
+            # working polygon; the loop terminates naturally when the inset
+            # collapses (raw_verts=None) or the proximity check fires.
+            if N_orig > 4:
+                orig_poly  = orig_poly[:-1]
+                N_orig     = len(orig_poly)
+                k_in_phase = 0
             k         += 1
             if N_orig < 3:
                 break
@@ -504,6 +579,12 @@ def plan() -> list[dict]:
                 lap.append((f"W{m-2}_{k}", w3x, w3y))
                 lap.append((f"W{m-1}_{k}", last_x, last_y))
 
+            # On the proximity-stop lap skip crossing check (same reason as
+            # DEGEN branch above).
+            if distance_stop:
+                lap_wps.append(lap)
+                break
+
             # ── Crossing check — segment-by-segment commit ─────────────────
             lap_segs = _lap_segments(lap)
             pre_lap_survey2 = list(survey_segs)    # snapshot: only survey segs, no transitions
@@ -529,13 +610,28 @@ def plan() -> list[dict]:
                 break
 
             lap_wps.append(lap)
+            if distance_stop:
+                break
+            # ── Proximity check for NEXT lap ─────────────────────────────
+            # Check if NEXT lap’s P3P4-inset vs P1P2-inset gap < SWATH.
+            # Done here (after append) so the current lap is always fully recorded
+            # before we decide to stop.
+            _next_off2 = HALF_SWATH + (k + 1) * SWATH
+            _pi_next2, _ = _inset_polygon_raw(penta_poly, _next_off2)
+            if _pi_next2 and len(_pi_next2) == 5:
+                _d_next2 = _seg_seg_dist(_pi_next2[1], _pi_next2[2],
+                                         _pi_next2[3], _pi_next2[4])
+                if _d_next2 < SWATH:
+                    distance_stop = True
+
             k         += 1
             k_in_phase += 1
 
     # ── Always end with W3_k (entry of the aborted lap) before centre ────
     # W3 = P2P3-inset ∩ P3P4-inset from the original pentagon, independent
     # of any polygon degeneration.  This gives a clean terminus near P3.
-    if lap_wps and k > 0:
+    # Skipped when distance_stop is True (lap completed cleanly — no aborted lap).
+    if not distance_stop and lap_wps and k > 0:
         off_k      = HALF_SWATH + k * SWATH
         off_prev_k = HALF_SWATH + (k - 1) * SWATH
         e_P2P3f = _offset_line(penta_poly, N_penta - 3, off_prev_k)
@@ -553,9 +649,20 @@ def plan() -> list[dict]:
     # Emission order per lap: W3_k → W4_k → W0_k → W1_k → W2_k
     # Lap list is stored as [W0, W1, W2, W3, W4]; W3=lap[M-2], W4=lap[M-1]
     # Reorder to: W{M-2}, W{M-1}, W0, W1, …, W{M-3}
+    #
+    # Proximity-stop lap: P3P4-inset and P1P2-inset are < SWATH apart.
+    # Halt at W4 on the last full lap.
 
-    for lap in lap_wps:
+    # Index of the last lap that has real survey content (m > 1)
+    stop_lap_idx = -1
+    if distance_stop:
+        for i, lp in enumerate(lap_wps):
+            if len(lp) > 1:
+                stop_lap_idx = i
+
+    for lap_idx, lap in enumerate(lap_wps):
         m = len(lap)
+        is_stop_lap = distance_stop and (lap_idx == stop_lap_idx)
         if m == 1:
             name, x, y = lap[0]
             add(name, x, y)
@@ -565,12 +672,16 @@ def plan() -> list[dict]:
         near_p4 = lap[m - 1]
         add(near_p3[0], near_p3[1], near_p3[2])
         add(near_p4[0], near_p4[1], near_p4[2])
+        # On proximity-stop lap: stop at W4_n
+        if is_stop_lap:
+            break
         for j in range(m - 2):
             name, x, y = lap[j]
             add(name, x, y)
 
     # ── Centre waypoint ────────────────────────────────────────
-    add("centre", 0.0, 0.0)
+    if not distance_stop:
+        add("centre", 0.0, 0.0)
 
     return waypoints
 
