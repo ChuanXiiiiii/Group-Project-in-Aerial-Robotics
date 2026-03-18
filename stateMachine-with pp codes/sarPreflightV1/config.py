@@ -128,6 +128,8 @@ MAP_BOUNDS_EAST  = -2.6614379883
 
 # Preview output path (served by Flask)
 PATTERN_PREVIEW_PATH = "sar_pattern_preview.png"
+#PATTERN_PREVIEW_PATH = "tmp/sar_pattern_preview.png" #For PI
+
 
 # ═══════════════════════════════════════════════════════════════
 #  Preflight check thresholds (Step 5)
