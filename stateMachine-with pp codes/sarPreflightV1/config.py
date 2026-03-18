@@ -12,15 +12,17 @@ MAVPROXY_MASTER = "/dev/ttyAMA0"
 MAVPROXY_MASTER_BAUD = 921600
 
 MAVPROXY_OUTPUTS = [
-    "udp:192.168.1.22:14550",     # ← Change to your Windows VM IP
-    "udp:127.0.0.1:14551",         # ← State machine connects here
+    #"udp:192.168.1.22:14550",     # ← Change to your Windows VM IP
+    #"udp:127.0.0.1:14551",         # ← State machine connects here
+    "tcp:127.0.0.1:5762",
 ]
 
 # ═══════════════════════════════════════════════════════════════
 #  State machine connection
 # ═══════════════════════════════════════════════════════════════
 
-CONNECTION_STRING = "udp:127.0.0.1:14551"
+#CONNECTION_STRING = "udp:127.0.0.1:14551"
+CONNECTION_STRING = "tcp:127.0.0.1:5762"
 BAUD_RATE = 921600
 
 # ═══════════════════════════════════════════════════════════════
@@ -106,7 +108,7 @@ MODE_NAMES = {v: k for k, v in FLIGHT_MODES.items()}
 SWATH_WIDTH_M = 10       # Spacing between parallel scan lines (metres)
 SEARCH_ALT_M  = 30       # AGL altitude for search waypoints (metres)
 SCAN_HEADING_DEG = 0     # 0 = scan lines run East–West, 90 = North–South
-PATTERN_ALGORITHM = 0    # 0 = lawnmower, 1 = perimeter_spiral
+PATTERN_ALGORITHM = 1    # 0 = lawnmower, 1 = perimeter_spiral
 
 # ═══════════════════════════════════════════════════════════════
 #  Map tile for pattern preview
@@ -125,7 +127,7 @@ MAP_BOUNDS_WEST  = -2.6751708984
 MAP_BOUNDS_EAST  = -2.6614379883
 
 # Preview output path (served by Flask)
-PATTERN_PREVIEW_PATH = "/tmp/sar_pattern_preview.png"
+PATTERN_PREVIEW_PATH = "sar_pattern_preview.png"
 
 # ═══════════════════════════════════════════════════════════════
 #  Preflight check thresholds (Step 5)
