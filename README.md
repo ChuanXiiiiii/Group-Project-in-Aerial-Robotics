@@ -10,6 +10,7 @@ A comprehensive system for autonomous UAV search and rescue operations, featurin
 |-----------|-------------|
 | **sarFlightDay4** | **PRODUCTION VERSION - Final flight system used for actual operations** |
 | **sarFlightDay1V2** | SAR Flight System v2, includes state machine, GUI, and MAVProxy integration |
+| **submission_final_cv** | Final submission package for the computer vision pipeline and mission orchestration |
 | **path_planner** | Path planning engine with lawnmower, spiral, and PLB search algorithms |
 | **herish_code_v1** | Waypoint generation tools with KML parsing and GPS coordinate conversion |
 | **stateMachine-with pp codes** | Complete state machine with integrated path planning (pre-flight version) |
@@ -43,6 +44,12 @@ The **sarFlightDay4** directory contains the production state machine with:
 - **kml_to_gps.py** - Convert KML files to GPS coordinates
 - **mission_upload.py** - Upload missions to UAV
 - **kml_parser.py** - Parse KML files
+
+#### Computer Vision Submission (`submission_final_cv`)
+- **main.py** - Mission orchestrator combining state machine, telemetry, navigation, and vision
+- **vision.py** - Camera and detection backend wrapper (YOLO/TFLite/NCNN)
+- **navigation.py** - Navigation controller for mission execution
+- **config.py** - Runtime mode, camera, detection, and mission configuration
 
 ## 🚀 Getting Started
 
@@ -120,6 +127,21 @@ python3 simulate.py
 
 # Generate PLB probability search
 python3 PLB_searching.py
+```
+
+#### 4. Run Vision Submission Pipeline
+
+```bash
+cd submission_final_cv/
+python3 main.py
+```
+
+Useful runtime flags:
+```bash
+python3 main.py --dry-run
+python3 main.py --headless
+python3 main.py --model best.tflite
+python3 main.py --spiral
 ```
 
 ## 📋 Configuration
