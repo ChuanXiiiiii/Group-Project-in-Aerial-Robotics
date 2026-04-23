@@ -10,10 +10,10 @@ A comprehensive system for autonomous UAV search and rescue operations, featurin
 |-----------|-------------|
 | **sarFlightDay4** | **PRODUCTION VERSION - Final flight system used for actual operations** |
 | **sarFlightDay1V2** | SAR Flight System v2, includes state machine, GUI, and MAVProxy integration |
-| **submission_final_cv** | Final submission package for the computer vision pipeline and mission orchestration |
 | **path_planner** | Path planning engine with lawnmower, spiral, and PLB search algorithms |
 | **herish_code_v1** | Waypoint generation tools with KML parsing and GPS coordinate conversion |
 | **stateMachine-with pp codes** | Complete state machine with integrated path planning (pre-flight version) |
+| **submission_final_cv** | Final submission package for the computer vision pipeline and mission orchestration |
 
 ### Key Features
 
